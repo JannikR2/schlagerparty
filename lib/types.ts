@@ -1,4 +1,4 @@
-export type GamePhase = "lobby" | "playing" | "revealing" | "finished";
+export type GamePhase = "lobby" | "countdown" | "playing" | "revealing" | "finished";
 
 export interface Track {
   id: string;
@@ -33,6 +33,7 @@ export interface PublicGame {
   currentPlayerId: string | null;
   revealEndsAt: string | null;
   clipEndsAt: string | null;
+  turnStartsAt: string | null;
   selectedGap: number | null;
   revealedTrack: Track | null;
   placementCorrect: boolean | null;

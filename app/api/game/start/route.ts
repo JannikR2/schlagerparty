@@ -3,7 +3,7 @@ import { randomInt } from "node:crypto";
 import { requireActiveGame, currentIdentity, serializeGame } from "@/lib/game-data";
 import { adminDb } from "@/lib/supabase";
 import { apiError } from "@/lib/http";
-import { beginTurn } from "@/lib/turns";
+import { scheduleTurn } from "@/lib/turns";
 
 export async function POST() {
   try {
@@ -26,7 +26,7 @@ export async function POST() {
     const { error: cardError } = await db.from("cards").insert(cards);
     if (cardError) throw cardError;
     await db.from("tracks").update({ state: "card" }).in("id", cards.map((card) => card.track_id));
-    const started = await beginTurn(game, 0);
+    const started = await scheduleTurn(game, 0);
     return NextResponse.json({ game: await serializeGame(started) });
   } catch (error) { return apiError(error); }
 }

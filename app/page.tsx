@@ -45,7 +45,7 @@ export default function Home() {
   }, [refresh]);
 
   useEffect(() => {
-    const deadline = game?.phase === "revealing" ? game.revealEndsAt : game?.clipEndsAt;
+    const deadline = game?.phase === "revealing" ? game.revealEndsAt : game?.phase === "countdown" ? game.turnStartsAt : game?.clipEndsAt;
     if (!deadline) {
       // Reset the derived countdown whenever the server clears its deadline.
       // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -53,11 +53,11 @@ export default function Home() {
     }
     const tick = () => setRemaining(Math.max(0, Math.ceil((new Date(deadline).getTime() - Date.now()) / 1000)));
     tick(); const timer = window.setInterval(tick, 250); return () => clearInterval(timer);
-  }, [game?.phase, game?.revealEndsAt, game?.clipEndsAt]);
+  }, [game?.phase, game?.revealEndsAt, game?.turnStartsAt, game?.clipEndsAt]);
 
   useEffect(() => {
     if (!game || remaining !== 0) return;
-    if (game.phase === "revealing" && game.revealEndsAt) void api("/api/game/advance", { method: "POST", body: JSON.stringify({ version: game.version }) }).then(refresh).catch(() => refresh());
+    if ((game.phase === "revealing" && game.revealEndsAt) || (game.phase === "countdown" && game.turnStartsAt)) void api("/api/game/advance", { method: "POST", body: JSON.stringify({ version: game.version }) }).then(refresh).catch(() => refresh());
     if (game.phase === "playing" && game.clipEndsAt) void api("/api/game/pause", { method: "POST", body: JSON.stringify({ version: game.version }) }).catch(() => undefined);
   }, [game, remaining, refresh]);
 
@@ -111,15 +111,17 @@ export default function Home() {
     {!game && mode === "create" && <CreateForm onSubmit={createGame} devices={devices} defaultName={displayName} busy={busy} onBack={() => setMode("home")} onReload={loadDevices} />}
     {game && game.phase === "lobby" && !game.viewerPlayerId && <JoinForm onSubmit={join} busy={busy} />}
     {game && game.phase === "lobby" && game.viewerPlayerId && <Lobby game={game} busy={busy} onStart={() => run(() => api("/api/game/start", { method: "POST" }))} onTest={() => run(async () => { await api("/api/game/test-device", { method: "POST" }); setNotice("Spotify-Handy erfolgreich verbunden."); })} />}
-    {game && (game.phase === "playing" || game.phase === "revealing") && <section className="game-shell">
-      <div className="turn-banner"><span>{game.phase === "playing" ? "Jetzt am Zug" : "Auflösung"}</span><strong>{activePlayer?.name}</strong><em>{remaining > 0 ? `${remaining}s` : "…"}</em></div>
+    {game && (game.phase === "countdown" || game.phase === "playing" || game.phase === "revealing") && <section className="game-shell">
+      <div className="turn-banner"><span>{game.phase === "revealing" ? "Auflösung" : "Jetzt am Zug"}</span><strong>{activePlayer?.name}</strong><em>{remaining > 0 ? `${remaining}s` : "…"}</em></div>
       <ScoreStrip game={game} />
-      <div className={`mystery panel ${game.phase === "revealing" ? "revealed" : ""}`}>
-        {game.revealedTrack ? <TrackFace track={game.revealedTrack} correct={game.placementCorrect} /> : <><div className="vinyl"><span>?</span></div><h3>Welcher Hit läuft gerade?</h3><p>{remaining > 0 ? `Ausschnitt: noch ${remaining} Sekunden` : "Jetzt einsortieren"}</p></>}
-      </div>
-      <Timeline cards={activePlayer?.cards ?? []} interactive={Boolean(canPlace)} selectedGap={selectedGap} onSelect={setSelectedGap} revealed={game.phase === "revealing" ? game.revealedTrack : null} revealGap={game.selectedGap} correct={game.placementCorrect} />
-      {canPlace && <button className="primary sticky" disabled={selectedGap === null || busy} onClick={() => run(() => api("/api/game/place", { method: "POST", body: JSON.stringify({ gap: selectedGap, version: game.version }) }))}>Hier platzieren</button>}
-      {!canPlace && game.phase === "playing" && <p className="waiting">{viewer ? `${activePlayer?.name} entscheidet …` : "Du schaust als Gast zu …"}</p>}
+      {game.phase === "countdown" ? <div className="countdown panel"><span>Als Nächstes</span><h2>{activePlayer?.name}</h2><strong>{remaining || 1}</strong><p>Mach dich bereit – gleich startet der nächste Hit.</p></div> : <>
+        <div className={`mystery panel ${game.phase === "revealing" ? "revealed" : ""}`}>
+          {game.revealedTrack ? <TrackFace track={game.revealedTrack} correct={game.placementCorrect} /> : <><div className="vinyl"><span>?</span></div><h3>Welcher Hit läuft gerade?</h3><p>{remaining > 0 ? `Ausschnitt: noch ${remaining} Sekunden` : "Jetzt einsortieren"}</p></>}
+        </div>
+        <Timeline cards={activePlayer?.cards ?? []} interactive={Boolean(canPlace)} selectedGap={selectedGap} onSelect={setSelectedGap} revealed={game.phase === "revealing" ? game.revealedTrack : null} revealGap={game.selectedGap} correct={game.placementCorrect} />
+        {canPlace && <button className="primary sticky" disabled={selectedGap === null || busy} onClick={() => run(() => api("/api/game/place", { method: "POST", body: JSON.stringify({ gap: selectedGap, version: game.version }) }))}>Hier platzieren</button>}
+        {!canPlace && game.phase === "playing" && <p className="waiting">{viewer ? `${activePlayer?.name} entscheidet …` : "Du schaust als Gast zu …"}</p>}
+      </>}
     </section>}
     {game?.phase === "finished" && <Finished game={game} busy={busy} onClose={() => run(async () => { await api("/api/game/close", { method: "POST" }); location.reload(); })} />}
   </main>;

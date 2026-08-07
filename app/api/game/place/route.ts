@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
     await spotifyFetchForGame(game, `/me/player/pause?device_id=${encodeURIComponent(game.spotify_device_id)}`, { method: "PUT" }).catch(() => undefined);
     const cardCount = cards.length + (correct ? 1 : 0);
     if (cardCount >= 10) {
-      const finished = (await db.from("games").update({ phase: "finished", winner_ids: [identity.player.id], reveal_ends_at: null, version: updated.version + 1 }).eq("id", game.id).eq("version", updated.version).select().single()).data;
+      const finished = (await db.from("games").update({ phase: "finished", winner_ids: [identity.player.id], reveal_ends_at: null, turn_starts_at: null, version: updated.version + 1 }).eq("id", game.id).eq("version", updated.version).select().single()).data;
       return NextResponse.json({ game: await serializeGame(finished) });
     }
     return NextResponse.json({ game: await serializeGame(updated) });

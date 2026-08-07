@@ -44,6 +44,7 @@ export async function serializeGame(game: Record<string, unknown>): Promise<Publ
     playlistName: game.playlist_name as string, hostPlayerId: (players ?? []).find((player) => player.is_host)?.id ?? "",
     currentPlayerId: currentPlayer?.id ?? null, revealEndsAt: game.reveal_ends_at as string | null,
     clipEndsAt: game.clip_ends_at as string | null,
+    turnStartsAt: game.turn_starts_at as string | null,
     selectedGap: game.selected_gap as number | null,
     revealedTrack: game.phase === "revealing" || game.phase === "finished" ? (current ? toTrack(current) : null) : null,
     placementCorrect: game.phase === "revealing" || game.phase === "finished" ? game.placement_correct as boolean | null : null,

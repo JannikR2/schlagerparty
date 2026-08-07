@@ -1,6 +1,6 @@
 create extension if not exists pgcrypto;
 
-create type public.game_phase as enum ('lobby', 'playing', 'revealing', 'finished');
+create type public.game_phase as enum ('lobby', 'countdown', 'playing', 'revealing', 'finished');
 
 create table public.games (
   id uuid primary key default gen_random_uuid(),
@@ -19,6 +19,7 @@ create table public.games (
   placement_correct boolean,
   reveal_ends_at timestamptz,
   clip_ends_at timestamptz,
+  turn_starts_at timestamptz,
   winner_ids uuid[] not null default '{}',
   created_at timestamptz not null default now(),
   closed_at timestamptz
