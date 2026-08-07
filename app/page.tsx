@@ -92,12 +92,22 @@ export default function Home() {
     void run(() => api("/api/game/join", { method: "POST", body: JSON.stringify(Object.fromEntries(data)) }));
   };
 
+  const resetGame = () => {
+    if (!window.confirm("Aktive Runde wirklich zurücksetzen? Der aktuelle Spielstand geht verloren.")) return;
+    void run(async () => {
+      await api("/api/game/reset", { method: "POST" });
+      setGame(null);
+      setMode("home");
+    });
+  };
+
   const activePlayer = game?.players.find((player) => player.id === game.currentPlayerId);
   const viewer = game?.players.find((player) => player.id === game.viewerPlayerId);
   const canPlace = game?.phase === "playing" && game.viewerPlayerId === game.currentPlayerId;
 
   return <main>
     <header className="brand"><span className="record">♪</span><div><h1>Schlagerparty</h1><p>Sortier den Soundtrack deines Lebens.</p></div></header>
+    {game && spotifyConnected && <button className="reset-button" onClick={resetGame} disabled={busy} title="Festgefahrene Runde beenden">↻ Runde zurücksetzen</button>}
     {error && <div className="toast error">{error}<button onClick={() => setError(null)}>×</button></div>}
     {notice && <div className="toast">{notice}</div>}
     {!game && mode === "home" && <section className="hero panel">
