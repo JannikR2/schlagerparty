@@ -95,7 +95,11 @@ create policy "public can read game signals" on public.game_signals for select u
 create function public.emit_game_signal() returns trigger language plpgsql security definer set search_path = public as $$
 declare target_game uuid; target_version integer;
 begin
-  target_game := case when tg_table_name = 'games' then new.id else new.game_id end;
+  if tg_table_name = 'games' then
+    target_game := new.id;
+  else
+    target_game := new.game_id;
+  end if;
   select version into target_version from public.games where id = target_game;
   insert into public.game_signals(game_id, version) values (target_game, coalesce(target_version, 1));
   return new;

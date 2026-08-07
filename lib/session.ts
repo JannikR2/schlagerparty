@@ -11,7 +11,9 @@ export interface SpotifySession {
   displayName: string;
 }
 
-const key = () => new TextEncoder().encode(serverEnv().SESSION_SECRET);
+// `dir` + A256GCM requires exactly 256 bits. Hashing accepts a human-readable
+// secret of any allowed length while always deriving the required 32-byte key.
+const key = () => createHash("sha256").update(serverEnv().SESSION_SECRET, "utf8").digest();
 
 export async function seal(value: object) {
   return new EncryptJWT({ value })

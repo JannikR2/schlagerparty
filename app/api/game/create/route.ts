@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
     const devices = (await devicesResponse.json()).devices as Array<{ id: string; type: string; is_restricted: boolean }>;
     const device = devices.find((item) => item.id === input.deviceId && !item.is_restricted);
     if (!device) throw new Error("Das Spotify-Gerät ist nicht mehr verfügbar. Öffne Spotify auf dem Host-Handy erneut.");
-    if (!/smartphone/i.test(device.type)) throw new Error("Bitte das Spotify-Gerät des Host-Handys auswählen.");
+    if (!/(smartphone|computer)/i.test(device.type)) throw new Error("Bitte die Spotify-App auf dem Host-Handy oder Computer auswählen.");
     const playlistId = playlistIdFromUrl(input.playlistUrl);
     const imported = await importPlaylist(playlistId);
     if (imported.tracks.length < 2) throw new Error("Die Playlist enthält nicht genug geeignete Titel.");

@@ -2,8 +2,8 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
-import { createClient } from "@supabase/supabase-js";
 import type { PublicGame } from "@/lib/types";
+import { browserDb } from "@/lib/supabase-browser";
 
 type ViewGame = PublicGame & { viewerPlayerId: string | null; viewerIsHost: boolean };
 type Device = { id: string; name: string; type: string; is_active: boolean };
@@ -39,9 +39,7 @@ export default function Home() {
       .then(([, session]) => { setSpotifyConnected(session.spotifyConnected); setDisplayName(session.displayName ?? ""); })
       .catch((reason) => setError(reason.message));
     const timer = window.setInterval(refresh, 5000);
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-    const supabase = url && key ? createClient(url, key) : null;
+    const supabase = browserDb();
     const channel = supabase?.channel("game-signals").on("postgres_changes", { event: "INSERT", schema: "public", table: "game_signals" }, refresh).subscribe();
     return () => { clearInterval(timer); if (channel) void supabase?.removeChannel(channel); };
   }, [refresh]);
@@ -128,15 +126,15 @@ export default function Home() {
 }
 
 function CreateForm({ onSubmit, devices, defaultName, busy, onBack, onReload }: { onSubmit: (e: FormEvent<HTMLFormElement>) => void; devices: Device[]; defaultName: string; busy: boolean; onBack: () => void; onReload: () => void }) {
-  const phones = devices.filter((device) => /smartphone/i.test(device.type));
+  const playbackDevices = devices.filter((device) => /(smartphone|computer)/i.test(device.type));
   return <section className="panel form-panel"><button className="back" onClick={onBack}>← Zurück</button><div className="eyebrow">Neue Runde</div><h2>Party vorbereiten</h2>
     <form onSubmit={onSubmit}>
       <label>Dein Spielername<input name="hostName" required maxLength={30} defaultValue={defaultName} placeholder="z. B. Jannik" /></label>
       <label>Spotify-Playlist<input name="playlistUrl" type="url" required placeholder="https://open.spotify.com/playlist/…" /></label>
       <div className="field-row"><label>Ausschnitt (Sek.)<input name="clipSeconds" type="number" min="1" step="1" defaultValue="30" required /></label><label>Auflösung (Sek.)<input name="revealSeconds" type="number" min="1" step="1" defaultValue="8" required /></label></div>
-      <label>Spotify-Handy<select name="deviceId" required defaultValue={phones.find((d) => d.is_active)?.id ?? ""}><option value="" disabled>Host-Handy wählen</option>{phones.map((device) => <option key={device.id} value={device.id}>{device.name}{device.is_active ? " · aktiv" : ""}</option>)}</select></label>
-      {!phones.length && <p className="warning">Öffne Spotify auf deinem Handy, starte kurz einen Song und lade die Geräteliste neu.</p>}
-      <button type="button" className="text-button" onClick={onReload}>Geräteliste neu laden</button><button className="primary" disabled={busy || !phones.length}>{busy ? "Playlist wird geprüft …" : "Lobby erstellen"}</button>
+      <label>Spotify-Gerät<select name="deviceId" required defaultValue={playbackDevices.find((d) => d.is_active)?.id ?? ""}><option value="" disabled>Host-Gerät wählen</option>{playbackDevices.map((device) => <option key={device.id} value={device.id}>{device.name} · {device.type}{device.is_active ? " · aktiv" : ""}</option>)}</select></label>
+      {!playbackDevices.length && <p className="warning">Öffne Spotify auf deinem Handy oder Computer, starte kurz einen Song und lade die Geräteliste neu.</p>}
+      <button type="button" className="text-button" onClick={onReload}>Geräteliste neu laden</button><button className="primary" disabled={busy || !playbackDevices.length}>{busy ? "Playlist wird geprüft …" : "Lobby erstellen"}</button>
     </form>
   </section>;
 }
@@ -147,7 +145,7 @@ function JoinForm({ onSubmit, busy }: { onSubmit: (e: FormEvent<HTMLFormElement>
 
 function Lobby({ game, busy, onStart, onTest }: { game: ViewGame; busy: boolean; onStart: () => void; onTest: () => void }) {
   return <section className="panel lobby"><div className="eyebrow">Lobby · {game.playlistName}</div><h2>Die Partycrew</h2><div className="players">{game.players.map((player) => <div className="player" key={player.id}><span>{player.seat + 1}</span><strong>{player.name}</strong>{player.id === game.hostPlayerId && <em>Host</em>}</div>)}</div>
-    {game.viewerIsHost ? <><p className="hint">Weitere Spieler öffnen einfach diese Startseite.</p><button className="text-button" onClick={onTest} disabled={busy}>Spotify-Handy testen</button><button className="primary" onClick={onStart} disabled={busy || game.poolRemaining < game.players.length + 1}>Spiel starten</button></> : <div className="waiting">Der Host startet gleich …</div>}
+    {game.viewerIsHost ? <><p className="hint">Weitere Spieler öffnen einfach diese Startseite.</p><button className="text-button" onClick={onTest} disabled={busy}>Spotify-Gerät testen</button><button className="primary" onClick={onStart} disabled={busy || game.poolRemaining < game.players.length + 1}>Spiel starten</button></> : <div className="waiting">Der Host startet gleich …</div>}
   </section>;
 }
 

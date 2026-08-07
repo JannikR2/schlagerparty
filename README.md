@@ -1,6 +1,6 @@
 # Schlagerparty
 
-Eine mobile Mehrspieler-WebApp nach dem Musik-Zeitstrahl-Prinzip. Ein Spotify-Premium-Host steuert die Wiedergabe auf seinem Handy; Gäste spielen ohne Konto über ihre Browser mit.
+Eine mobile Mehrspieler-WebApp nach dem Musik-Zeitstrahl-Prinzip. Ein Spotify-Premium-Host steuert die Wiedergabe auf seinem Handy oder Computer; Gäste spielen ohne Konto über ihre Browser mit.
 
 ## Lokale Einrichtung
 
@@ -14,7 +14,7 @@ npm install
 npm run dev
 ```
 
-Spotify akzeptiert für Development Mode nur Playlists, die dem Host gehören oder an denen er mitarbeitet. Vor dem Erstellen einer Runde Spotify auf dem Host-Handy öffnen und kurz einen Titel starten, damit es als Spotify-Connect-Gerät erscheint.
+Spotify akzeptiert für Development Mode nur Playlists, die dem Host gehören oder an denen er mitarbeitet. Vor dem Erstellen einer Runde Spotify auf dem Host-Gerät öffnen und kurz einen Titel starten, damit es als Spotify-Connect-Gerät erscheint.
 
 ## Vercel
 
