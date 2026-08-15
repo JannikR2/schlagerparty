@@ -17,6 +17,7 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 
 export default function Home() {
   const [game, setGame] = useState<ViewGame | null>(null);
+  const [lobbyOrigin, setLobbyOrigin] = useState("");
   const [spotifyConnected, setSpotifyConnected] = useState(false);
   const [displayName, setDisplayName] = useState("");
   const [devices, setDevices] = useState<Device[]>([]);
@@ -30,6 +31,10 @@ export default function Home() {
   const refresh = useCallback(async () => {
     const result = await api<{ game: ViewGame | null }>("/api/game");
     setGame(result.game);
+  }, []);
+
+  useEffect(() => {
+    setLobbyOrigin(window.location.origin);
   }, []);
 
   useEffect(() => {
@@ -133,7 +138,7 @@ export default function Home() {
     </section>}
     {!game && mode === "create" && <CreateForm onSubmit={createGame} devices={devices} defaultName={displayName} busy={busy} onBack={() => setMode("home")} onReload={loadDevices} />}
     {game && game.phase === "lobby" && !game.viewerPlayerId && <JoinForm onSubmit={join} busy={busy} />}
-    {game && game.phase === "lobby" && game.viewerPlayerId && <Lobby game={game} busy={busy} onStart={() => run(() => api("/api/game/start", { method: "POST" }))} onTest={() => run(async () => { await api("/api/game/test-device", { method: "POST" }); setNotice("Spotify-Handy erfolgreich verbunden."); })} />}
+    {game && game.phase === "lobby" && game.viewerPlayerId && <Lobby game={game} busy={busy} lobbyOrigin={lobbyOrigin} onStart={() => run(() => api("/api/game/start", { method: "POST" }))} onTest={() => run(async () => { await api("/api/game/test-device", { method: "POST" }); setNotice("Spotify-Handy erfolgreich verbunden."); })} />}
     {game && (game.phase === "countdown" || game.phase === "playing" || game.phase === "betting" || game.phase === "revealing") && <section className="game-shell">
       <div className="turn-banner"><span>{game.phase === "revealing" ? "Auflösung" : game.phase === "betting" ? "HITSTER" : "Jetzt am Zug"}</span><strong>{activePlayer?.name}</strong><em>{remaining > 0 ? `${remaining}s` : "…"}</em></div>
       <ScoreStrip game={game} />
@@ -188,9 +193,9 @@ function JoinForm({ onSubmit, busy }: { onSubmit: (e: FormEvent<HTMLFormElement>
   return <section className="panel form-panel"><div className="eyebrow">Runde gefunden</div><h2>Mach mit!</h2><form onSubmit={onSubmit}><label>Dein Name<input name="name" required maxLength={30} autoFocus placeholder="Wie sollen wir dich nennen?" /></label><button className="primary" disabled={busy}>Runde beitreten</button></form></section>;
 }
 
-function Lobby({ game, busy, onStart, onTest }: { game: ViewGame; busy: boolean; onStart: () => void; onTest: () => void }) {
+function Lobby({ game, busy, lobbyOrigin, onStart, onTest }: { game: ViewGame; busy: boolean; lobbyOrigin: string; onStart: () => void; onTest: () => void }) {
   return <section className="panel lobby"><div className="eyebrow">Lobby · {game.playlistName}</div><h2>Die Partycrew</h2><div className="players">{game.players.map((player) => <div className="player" key={player.id}><span>{player.seat + 1}</span><strong>{player.name}</strong>{player.id === game.hostPlayerId && <em>Host</em>}</div>)}</div>
-    {game.viewerIsHost ? <><p className="hint">Weitere Spieler öffnen einfach diese Startseite.</p><button className="text-button" onClick={onTest} disabled={busy}>Spotify-Gerät testen</button><button className="primary" onClick={onStart} disabled={busy || game.poolRemaining < game.players.length + 1}>Spiel starten</button></> : <div className="waiting">Der Host startet gleich …</div>}
+    {game.viewerIsHost ? <><p className="hint">Weitere Spieler öffnen: <strong>{lobbyOrigin || "diese Startseite"}</strong></p><button className="text-button" onClick={onTest} disabled={busy}>Spotify-Gerät testen</button><button className="primary" onClick={onStart} disabled={busy || game.poolRemaining < game.players.length + 1}>Spiel starten</button></> : <div className="waiting">Der Host startet gleich …</div>}
   </section>;
 }
 

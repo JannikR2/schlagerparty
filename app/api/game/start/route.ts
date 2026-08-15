@@ -26,15 +26,18 @@ export async function POST() {
     const { error: cardError } = await db.from("cards").insert(cards);
     if (cardError) throw cardError;
     await db.from("tracks").update({ state: "card" }).in("id", cards.map((card) => card.track_id));
-    try {
-      const started = await scheduleTurn(game, 0);
-      return NextResponse.json({ game: await serializeGame(started) });
-    } catch (error) {
-      if (error instanceof Error && /bereits verändert/i.test(error.message)) {
+    let startSource = game;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const started = await scheduleTurn(startSource, 0);
+        return NextResponse.json({ game: await serializeGame(started) });
+      } catch (error) {
+        if (!(error instanceof Error) || !/bereits verändert/i.test(error.message)) throw error;
         const refreshed = await requireActiveGame();
         if (refreshed.phase !== "lobby") return NextResponse.json({ game: await serializeGame(refreshed) });
+        startSource = refreshed;
       }
-      throw error;
     }
+    throw new Error("Der Spielzustand wurde bereits verändert. Bitte aktualisieren.");
   } catch (error) { return apiError(error); }
 }
