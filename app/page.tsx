@@ -17,7 +17,7 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 
 export default function Home() {
   const [game, setGame] = useState<ViewGame | null>(null);
-  const [lobbyOrigin, setLobbyOrigin] = useState("");
+  const [lobbyOrigin] = useState(() => (typeof window === "undefined" ? "" : window.location.origin));
   const [spotifyConnected, setSpotifyConnected] = useState(false);
   const [displayName, setDisplayName] = useState("");
   const [devices, setDevices] = useState<Device[]>([]);
@@ -31,10 +31,6 @@ export default function Home() {
   const refresh = useCallback(async () => {
     const result = await api<{ game: ViewGame | null }>("/api/game");
     setGame(result.game);
-  }, []);
-
-  useEffect(() => {
-    setLobbyOrigin(window.location.origin);
   }, []);
 
   useEffect(() => {
