@@ -10,7 +10,7 @@ export async function POST() {
     const game = await requireActiveGame();
     const identity = await currentIdentity(game.id);
     if (!identity.isHost) throw new Error("Nur der Host kann das Spiel starten.");
-    if (game.phase !== "lobby") return NextResponse.json({ game: await serializeGame(game) });
+    if (game.phase !== "lobby") throw new Error("Das Spiel wurde bereits gestartet.");
     const db = adminDb();
     const [{ data: players }, { data: tracks }] = await Promise.all([
       db.from("players").select("*").eq("game_id", game.id).order("seat"),
@@ -26,15 +26,7 @@ export async function POST() {
     const { error: cardError } = await db.from("cards").insert(cards);
     if (cardError) throw cardError;
     await db.from("tracks").update({ state: "card" }).in("id", cards.map((card) => card.track_id));
-    try {
-      const started = await scheduleTurn(game, 0);
-      return NextResponse.json({ game: await serializeGame(started) });
-    } catch (error) {
-      if (error instanceof Error && /bereits verändert/i.test(error.message)) {
-        const refreshed = await requireActiveGame();
-        if (refreshed.phase !== "lobby") return NextResponse.json({ game: await serializeGame(refreshed) });
-      }
-      throw error;
-    }
+    const started = await scheduleTurn(game, 0);
+    return NextResponse.json({ game: await serializeGame(started) });
   } catch (error) { return apiError(error); }
 }
