@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findInsertionGap, insertCard, isPlacementCorrect, randomClipStart, winnersByScore } from "./game-engine";
+import { insertCard, isPlacementCorrect, randomClipStart, winnersByScore } from "./game-engine";
 import type { Card, Track } from "./types";
 
 const track = (id: string, year: number): Track => ({ id, year, spotifyUri: `spotify:track:${id}`, spotifyUrl: `https://open.spotify.com/track/${id}`, name: id, artist: "Artist", durationMs: 180_000, coverUrl: null });
@@ -25,19 +25,6 @@ describe("isPlacementCorrect", () => {
 describe("insertCard", () => {
   it("inserts and renumbers the timeline", () => {
     expect(insertCard(cards(1980, 2000), track("new", 1990), 1).map((card) => [card.year, card.position])).toEqual([[1980, 0], [1990, 1], [2000, 2]]);
-  });
-});
-
-describe("findInsertionGap", () => {
-  it("returns the first valid insertion gap", () => {
-    expect(findInsertionGap(cards(1980, 2000), 1990)).toBe(1);
-  });
-  it("handles equal years deterministically", () => {
-    expect(findInsertionGap(cards(1980, 1980, 1990), 1980)).toBe(0);
-  });
-  it("handles edge insertions", () => {
-    expect(findInsertionGap(cards(1980, 2000), 1970)).toBe(0);
-    expect(findInsertionGap(cards(1980, 2000), 2010)).toBe(2);
   });
 });
 

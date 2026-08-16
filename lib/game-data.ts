@@ -25,20 +25,15 @@ export async function currentIdentity(gameId: string) {
 
 export async function serializeGame(game: Record<string, unknown>): Promise<PublicGame & { viewerPlayerId: string | null; viewerIsHost: boolean }> {
   const db = adminDb();
-  const hitsterPromise = game.current_track_id
-    ? db.from("hitster_bets").select("player_id,gap").eq("game_id", game.id).eq("track_id", game.current_track_id).order("created_at").order("id")
-    : Promise.resolve({ data: [] as Array<{ player_id: string; gap: number }> });
-  const [{ data: players }, { data: cards }, { data: tracks }, { data: hitsterBets }, identity] = await Promise.all([
-    db.from("players").select("id,name,seat,is_host,tokens").eq("game_id", game.id).order("seat"),
+  const [{ data: players }, { data: cards }, { data: tracks }, identity] = await Promise.all([
+    db.from("players").select("id,name,seat,is_host").eq("game_id", game.id).order("seat"),
     db.from("cards").select("player_id,track_id,position").eq("game_id", game.id).order("position"),
     db.from("tracks").select("*").eq("game_id", game.id),
-    hitsterPromise,
     currentIdentity(game.id as string),
   ]);
   const trackMap = new Map((tracks ?? []).map((track) => [track.id, track]));
   const publicPlayers = (players ?? []).map((player) => ({
     id: player.id, name: player.name, seat: player.seat,
-    tokens: player.tokens,
     cards: (cards ?? []).filter((card) => card.player_id === player.id).map((card) => ({ ...toTrack(trackMap.get(card.track_id)!), position: card.position })),
   }));
   const current = game.current_track_id ? trackMap.get(game.current_track_id as string) : null;
@@ -53,8 +48,6 @@ export async function serializeGame(game: Record<string, unknown>): Promise<Publ
     selectedGap: game.selected_gap as number | null,
     revealedTrack: game.phase === "revealing" || game.phase === "finished" ? (current ? toTrack(current) : null) : null,
     placementCorrect: game.phase === "revealing" || game.phase === "finished" ? game.placement_correct as boolean | null : null,
-    titleArtistAwarded: game.title_artist_awarded as boolean,
-    hitsterBets: (hitsterBets ?? []).map((bet) => ({ playerId: bet.player_id, gap: bet.gap })),
     players: publicPlayers, winnerIds: game.winner_ids as string[],
     poolRemaining: (tracks ?? []).filter((track) => track.state === "pool").length,
     viewerPlayerId: identity.player?.id ?? null, viewerIsHost: identity.isHost,
