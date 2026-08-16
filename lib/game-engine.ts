@@ -13,13 +13,6 @@ export function insertCard(cards: Card[], track: Track, gap: number): Card[] {
   return next.map((card, position) => ({ ...card, position }));
 }
 
-export function findInsertionGap(cards: Card[], year: number) {
-  for (let gap = 0; gap <= cards.length; gap += 1) {
-    if (isPlacementCorrect(cards, gap, year)) return gap;
-  }
-  return cards.length;
-}
-
 export function randomClipStart(durationMs: number, requestedSeconds: number, random = Math.random) {
   const clipMs = Math.min(durationMs, Math.max(1, requestedSeconds) * 1000);
   const availableStart = Math.max(0, durationMs - clipMs);

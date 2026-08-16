@@ -104,19 +104,6 @@ export default function Home() {
   const activePlayer = game?.players.find((player) => player.id === game.currentPlayerId);
   const viewer = game?.players.find((player) => player.id === game.viewerPlayerId);
   const canPlace = game?.phase === "playing" && game.viewerPlayerId === game.currentPlayerId;
-  const viewerBet = game?.hitsterBets.find((bet) => bet.playerId === game.viewerPlayerId);
-  const blockedBetGaps = new Set<number>([
-    ...(game?.hitsterBets.map((bet) => bet.gap) ?? []),
-    ...(game?.selectedGap === null || game?.selectedGap === undefined ? [] : [game.selectedGap]),
-  ]);
-  const canBet = Boolean(
-    game?.phase === "betting"
-    && viewer
-    && activePlayer
-    && viewer.id !== activePlayer.id
-    && viewer.tokens > 0
-    && !viewerBet,
-  );
 
   return <main>
     <header className="brand"><span className="record">♪</span><div><h1>Schlagerparty</h1><p>Sortier den Soundtrack deines Lebens.</p></div></header>
@@ -134,35 +121,15 @@ export default function Home() {
     {!game && mode === "create" && <CreateForm onSubmit={createGame} devices={devices} defaultName={displayName} busy={busy} onBack={() => setMode("home")} onReload={loadDevices} />}
     {game && game.phase === "lobby" && !game.viewerPlayerId && <JoinForm onSubmit={join} busy={busy} />}
     {game && game.phase === "lobby" && game.viewerPlayerId && <Lobby game={game} busy={busy} onStart={() => run(() => api("/api/game/start", { method: "POST" }))} onTest={() => run(async () => { await api("/api/game/test-device", { method: "POST" }); setNotice("Spotify-Handy erfolgreich verbunden."); })} />}
-    {game && (game.phase === "countdown" || game.phase === "playing" || game.phase === "betting" || game.phase === "revealing") && <section className="game-shell">
-      <div className="turn-banner"><span>{game.phase === "revealing" ? "Auflösung" : game.phase === "betting" ? "HITSTER" : "Jetzt am Zug"}</span><strong>{activePlayer?.name}</strong><em>{remaining > 0 ? `${remaining}s` : "…"}</em></div>
+    {game && (game.phase === "countdown" || game.phase === "playing" || game.phase === "revealing") && <section className="game-shell">
+      <div className="turn-banner"><span>{game.phase === "revealing" ? "Auflösung" : "Jetzt am Zug"}</span><strong>{activePlayer?.name}</strong><em>{remaining > 0 ? `${remaining}s` : "…"}</em></div>
       <ScoreStrip game={game} />
       {game.phase === "countdown" ? <div className="countdown panel"><span>Als Nächstes</span><h2>{activePlayer?.name}</h2><strong>{remaining || 1}</strong><p>Mach dich bereit – gleich startet der nächste Hit.</p></div> : <>
         <div className={`mystery panel ${game.phase === "revealing" ? "revealed" : ""}`}>
           {game.revealedTrack ? <TrackFace track={game.revealedTrack} correct={game.placementCorrect} /> : <><div className="vinyl"><span>?</span></div><h3>Welcher Hit läuft gerade?</h3><p>{remaining > 0 ? `Ausschnitt: noch ${remaining} Sekunden` : "Jetzt einsortieren"}</p></>}
         </div>
-        <Timeline
-          cards={activePlayer?.cards ?? []}
-          interactive={Boolean(canPlace || canBet)}
-          selectedGap={selectedGap}
-          onSelect={setSelectedGap}
-          disabledGaps={game.phase === "betting" ? Array.from(blockedBetGaps) : []}
-          ownHitsterGap={viewerBet?.gap ?? null}
-          hitsterGaps={game.hitsterBets.map((bet) => bet.gap)}
-          revealed={game.phase === "revealing" ? game.revealedTrack : null}
-          revealGap={game.selectedGap}
-          correct={game.placementCorrect}
-        />
+        <Timeline cards={activePlayer?.cards ?? []} interactive={Boolean(canPlace)} selectedGap={selectedGap} onSelect={setSelectedGap} revealed={game.phase === "revealing" ? game.revealedTrack : null} revealGap={game.selectedGap} correct={game.placementCorrect} />
         {canPlace && <button className="primary sticky" disabled={selectedGap === null || busy} onClick={() => run(() => api("/api/game/place", { method: "POST", body: JSON.stringify({ gap: selectedGap, version: game.version }) }))}>Hier platzieren</button>}
-        {game.phase === "betting" && <div className="betting-actions panel">
-          {game.viewerPlayerId === game.currentPlayerId && <p>Andere Teams können jetzt HITSTER setzen.</p>}
-          {!viewer && <p>Du schaust als Gast zu …</p>}
-          {viewer && viewer.id !== game.currentPlayerId && viewerBet && <p>Dein HITSTER liegt auf Position {viewerBet.gap + 1}.</p>}
-          {viewer && viewer.id !== game.currentPlayerId && !viewerBet && viewer.tokens < 1 && <p>Du hast keine Tokens mehr.</p>}
-          {canBet && <button className="primary" disabled={selectedGap === null || blockedBetGaps.has(selectedGap) || busy} onClick={() => run(() => api("/api/game/hitster", { method: "POST", body: JSON.stringify({ gap: selectedGap, version: game.version }) }))}>HITSTER einsetzen · 1 Token</button>}
-          {game.viewerIsHost && <button className="secondary host-action" disabled={busy} onClick={() => run(() => api("/api/game/reveal", { method: "POST", body: JSON.stringify({ version: game.version }) }))}>Karte aufdecken</button>}
-        </div>}
-        {game.phase === "revealing" && game.viewerIsHost && !game.titleArtistAwarded && <button className="secondary host-action" disabled={busy} onClick={() => run(() => api("/api/game/token-earned", { method: "POST", body: JSON.stringify({ version: game.version }) }))}>{`Titel + Künstler richtig (${activePlayer?.name ?? "Aktives Team"}) · +1 Token`}</button>}
         {!canPlace && game.phase === "playing" && <p className="waiting">{viewer ? `${activePlayer?.name} entscheidet …` : "Du schaust als Gast zu …"}</p>}
       </>}
     </section>}
@@ -194,22 +161,13 @@ function Lobby({ game, busy, onStart, onTest }: { game: ViewGame; busy: boolean;
   </section>;
 }
 
-function ScoreStrip({ game }: { game: ViewGame }) {
-  return <div className="score-strip">{game.players.map((player) => <div key={player.id} className={player.id === game.currentPlayerId ? "active" : ""}><strong>{player.name}</strong><span className="tokens">{player.cards.length}/10 · {player.tokens} Tokens</span></div>)}</div>;
-}
+function ScoreStrip({ game }: { game: ViewGame }) { return <div className="score-strip">{game.players.map((player) => <div key={player.id} className={player.id === game.currentPlayerId ? "active" : ""}><strong>{player.name}</strong><span>{player.cards.length}/10</span></div>)}</div>; }
 
 function TrackFace({ track, correct }: { track: NonNullable<PublicGame["revealedTrack"]>; correct: boolean | null }) { return <div className="track-face">{track.coverUrl && <Image src={track.coverUrl} alt="Albumcover" width={160} height={160} priority />}<div><span className={correct ? "result right" : "result wrong"}>{correct ? "Richtig!" : "Leider falsch"}</span><h3>{track.name}</h3><p>{track.artist}</p><strong>{track.year}</strong><a href={track.spotifyUrl} target="_blank" rel="noreferrer">Auf Spotify öffnen ↗</a></div></div>; }
 
-function Timeline({ cards, interactive, selectedGap, onSelect, disabledGaps, hitsterGaps, ownHitsterGap, revealed, revealGap, correct }: { cards: PublicGame["players"][number]["cards"]; interactive: boolean; selectedGap: number | null; onSelect: (gap: number) => void; disabledGaps: number[]; hitsterGaps: number[]; ownHitsterGap: number | null; revealed: PublicGame["revealedTrack"]; revealGap: number | null; correct: boolean | null }) {
+function Timeline({ cards, interactive, selectedGap, onSelect, revealed, revealGap, correct }: { cards: PublicGame["players"][number]["cards"]; interactive: boolean; selectedGap: number | null; onSelect: (gap: number) => void; revealed: PublicGame["revealedTrack"]; revealGap: number | null; correct: boolean | null }) {
   const nodes = useMemo(() => Array.from({ length: cards.length * 2 + 1 }), [cards.length]);
-  const disabledSet = useMemo(() => new Set(disabledGaps), [disabledGaps]);
-  const hitsterSet = useMemo(() => new Set(hitsterGaps), [hitsterGaps]);
-  return <div className="timeline-wrap"><h3>Zeitstrahl</h3><div className="timeline">{nodes.map((_, index) => {
-    if (index % 2 !== 0) return <article className="card" key={cards[(index - 1) / 2].id}><small>{cards[(index - 1) / 2].year}</small><strong>{cards[(index - 1) / 2].name}</strong><span>{cards[(index - 1) / 2].artist}</span></article>;
-    const gap = index / 2;
-    const blocked = disabledSet.has(gap);
-    return <button key={`g${index}`} aria-label={`Lücke ${gap + 1}`} className={`gap ${selectedGap === gap ? "selected" : ""} ${hitsterSet.has(gap) ? "hitster-occupied" : ""} ${ownHitsterGap === gap ? "hitster-own" : ""}`} disabled={!interactive || blocked} onClick={() => onSelect(gap)}><span>+</span>{revealed && revealGap === gap && !correct && <b className="ghost-year">{revealed.year}</b>}</button>;
-  })}</div></div>;
+  return <div className="timeline-wrap"><h3>Zeitstrahl</h3><div className="timeline">{nodes.map((_, index) => index % 2 === 0 ? <button key={`g${index}`} aria-label={`Lücke ${index / 2 + 1}`} className={`gap ${selectedGap === index / 2 ? "selected" : ""}`} disabled={!interactive} onClick={() => onSelect(index / 2)}><span>+</span>{revealed && revealGap === index / 2 && !correct && <b className="ghost-year">{revealed.year}</b>}</button> : <article className="card" key={cards[(index - 1) / 2].id}><small>{cards[(index - 1) / 2].year}</small><strong>{cards[(index - 1) / 2].name}</strong><span>{cards[(index - 1) / 2].artist}</span></article>)}</div></div>;
 }
 
 function Finished({ game, busy, onClose }: { game: ViewGame; busy: boolean; onClose: () => void }) {

@@ -1,4 +1,4 @@
-export type GamePhase = "lobby" | "countdown" | "playing" | "betting" | "revealing" | "finished";
+export type GamePhase = "lobby" | "countdown" | "playing" | "revealing" | "finished";
 
 export interface Track {
   id: string;
@@ -19,13 +19,7 @@ export interface Player {
   id: string;
   name: string;
   seat: number;
-  tokens: number;
   cards: Card[];
-}
-
-export interface HitsterBet {
-  playerId: string;
-  gap: number;
 }
 
 export interface PublicGame {
@@ -43,8 +37,6 @@ export interface PublicGame {
   selectedGap: number | null;
   revealedTrack: Track | null;
   placementCorrect: boolean | null;
-  titleArtistAwarded: boolean;
-  hitsterBets: HitsterBet[];
   players: Player[];
   winnerIds: string[];
   poolRemaining: number;
