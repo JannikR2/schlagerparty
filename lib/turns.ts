@@ -1,7 +1,7 @@
 import { randomInt } from "node:crypto";
 import { adminDb } from "./supabase";
 import { randomClipStart, winnersByScore } from "./game-engine";
-import { spotifyFetchForGame } from "./spotify";
+import { playTrackForGame } from "./spotify";
 
 export async function beginTurn(game: Record<string, unknown>, seat: number) {
   const db = adminDb();
@@ -18,12 +18,13 @@ export async function beginTurn(game: Record<string, unknown>, seat: number) {
   if (updateError) throw new Error("Der Spielzustand wurde bereits verändert. Bitte aktualisieren.");
   await db.from("tracks").update({ state: "current" }).eq("id", track.id).eq("state", "pool");
   try {
-    await spotifyFetchForGame(game as { id: string; spotify_session: string }, `/me/player/play?device_id=${encodeURIComponent(game.spotify_device_id as string)}`, {
-      method: "PUT", body: JSON.stringify({ uris: [track.spotify_uri], position_ms: positionMs }),
-    });
+    await playTrackForGame(game as { id: string; spotify_session: string; spotify_device_id: string }, track.spotify_uri, positionMs);
   } catch (error) {
     await db.from("tracks").update({ state: "pool" }).eq("id", track.id);
-    await db.from("games").update({ phase: "lobby", current_track_id: null, clip_ends_at: null, version: updated.version + 1 }).eq("id", game.id);
+    await db.from("games").update({
+      phase: "countdown", current_track_id: null, clip_ends_at: null,
+      turn_starts_at: new Date(Date.now() + 5000).toISOString(), version: updated.version + 1,
+    }).eq("id", game.id).eq("version", updated.version);
     throw error;
   }
   return updated;

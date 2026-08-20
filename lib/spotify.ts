@@ -50,9 +50,47 @@ export async function spotifyFetchForGame(game: { id: string; spotify_session: s
   const original = await unseal<SpotifySession>(game.spotify_session);
   const { response, session } = await rawSpotifyFetch(original, path, init);
   if (session.accessToken !== original.accessToken) {
-    await adminDb().from("games").update({ spotify_session: await seal(session) }).eq("id", game.id);
+    const sealedSession = await seal(session);
+    await adminDb().from("games").update({ spotify_session: sealedSession }).eq("id", game.id);
+    game.spotify_session = sealedSession;
   }
   return response;
+}
+
+type SpotifyGame = { id: string; spotify_session: string; spotify_device_id: string };
+type SpotifyDevice = { id: string | null; type: string; is_active: boolean; is_restricted: boolean };
+
+export function choosePlaybackDevice(devices: SpotifyDevice[], preferredId: string) {
+  const playable = devices.filter((device): device is SpotifyDevice & { id: string } =>
+    Boolean(device.id) && !device.is_restricted && /^(smartphone|computer)$/i.test(device.type),
+  );
+  return playable.find((device) => device.id === preferredId)
+    ?? playable.find((device) => device.is_active)
+    ?? (playable.length === 1 ? playable[0] : null);
+}
+
+export async function playTrackForGame(game: SpotifyGame, uri: string, positionMs: number) {
+  const devicesResponse = await spotifyFetchForGame(game, "/me/player/devices");
+  const body = await devicesResponse.json() as { devices?: SpotifyDevice[] };
+  const device = choosePlaybackDevice(body.devices ?? [], game.spotify_device_id);
+  if (!device) {
+    throw new SpotifyApiError(404, "Spotify-Handy nicht erreichbar. Öffne Spotify auf dem Host-Handy; die Runde versucht es gleich erneut.", "NO_ACTIVE_DEVICE");
+  }
+
+  if (device.id !== game.spotify_device_id) {
+    await adminDb().from("games").update({ spotify_device_id: device.id }).eq("id", game.id);
+  }
+
+  // Explicitly activating the selected Connect device prevents mobile clients from
+  // disappearing between the pause after a guess and the next turn.
+  await spotifyFetchForGame(game, "/me/player", {
+    method: "PUT",
+    body: JSON.stringify({ device_ids: [device.id], play: false }),
+  });
+  await spotifyFetchForGame(game, `/me/player/play?device_id=${encodeURIComponent(device.id)}`, {
+    method: "PUT",
+    body: JSON.stringify({ uris: [uri], position_ms: positionMs }),
+  });
 }
 
 export function playlistIdFromUrl(input: string) {
