@@ -23,3 +23,15 @@ export function winnersByScore(players: Array<{ id: string; cardCount: number }>
   const max = Math.max(...players.map((player) => player.cardCount));
   return players.filter((player) => player.cardCount === max).map((player) => player.id);
 }
+
+export function automaticPlacementGap(cards: Array<{ year: number }>, year: number) {
+  return cards.filter((card) => card.year <= year).length;
+}
+
+export function tokenAfterBonus(tokens: number) {
+  return Math.min(5, tokens + 1);
+}
+
+export function winnersAtTarget(players: Array<{ id: string; cardCount: number }>, target = 10) {
+  return players.filter((player) => player.cardCount >= target).map((player) => player.id);
+}

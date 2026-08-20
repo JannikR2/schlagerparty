@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { insertCard, isPlacementCorrect, randomClipStart, winnersByScore } from "./game-engine";
+import { automaticPlacementGap, insertCard, isPlacementCorrect, randomClipStart, tokenAfterBonus, winnersAtTarget, winnersByScore } from "./game-engine";
 import type { Card, Track } from "./types";
 
 const track = (id: string, year: number): Track => ({ id, year, spotifyUri: `spotify:track:${id}`, spotifyUrl: `https://open.spotify.com/track/${id}`, name: id, artist: "Artist", durationMs: 180_000, coverUrl: null });
@@ -40,5 +40,20 @@ describe("randomClipStart", () => {
 describe("winnersByScore", () => {
   it("returns all leaders on a tie", () => {
     expect(winnersByScore([{ id: "a", cardCount: 4 }, { id: "b", cardCount: 5 }, { id: "c", cardCount: 5 }])).toEqual(["b", "c"]);
+  });
+});
+
+describe("token rules", () => {
+  it("caps the real-life bonus at five tokens", () => {
+    expect(tokenAfterBonus(3)).toBe(4);
+    expect(tokenAfterBonus(5)).toBe(5);
+  });
+
+  it("places a won song after existing songs from the same year", () => {
+    expect(automaticPlacementGap(cards(1980, 1990, 1990, 2000), 1990)).toBe(3);
+  });
+
+  it("allows all players reaching ten cards in the same round to win", () => {
+    expect(winnersAtTarget([{ id: "active", cardCount: 10 }, { id: "bettor", cardCount: 10 }, { id: "other", cardCount: 9 }])).toEqual(["active", "bettor"]);
   });
 });

@@ -4,7 +4,7 @@ Eine mobile Mehrspieler-WebApp nach dem Musik-Zeitstrahl-Prinzip. Ein Spotify-Pr
 
 ## Lokale Einrichtung
 
-1. Ein Supabase-Projekt erstellen und `supabase/migrations/202608070001_initial.sql` im SQL Editor ausführen.
+1. Ein Supabase-Projekt erstellen und alle Dateien aus `supabase/migrations` in aufsteigender Reihenfolge im SQL Editor ausführen.
 2. Im Spotify Developer Dashboard eine App im Development Mode erstellen. Als Redirect URI exakt `http://127.0.0.1:3000/api/auth/spotify/callback` hinterlegen und den Premium-Host zur Allowlist hinzufügen.
 3. `.env.example` nach `.env.local` kopieren und alle Werte eintragen. `SESSION_SECRET` muss mindestens 32 zufällige Zeichen enthalten.
 4. Anwendung starten:

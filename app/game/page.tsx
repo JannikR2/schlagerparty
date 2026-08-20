@@ -43,7 +43,9 @@ export default function GamePage() {
   }, [refresh]);
 
   useEffect(() => {
-    const deadline = game?.phase === "revealing" ? game.revealEndsAt : game?.phase === "countdown" ? game.turnStartsAt : game?.clipEndsAt;
+    const deadline = game?.phase === "revealing" ? game.revealEndsAt
+      : game?.phase === "betting" ? game.bettingEndsAt
+      : game?.phase === "countdown" ? game.turnStartsAt : game?.clipEndsAt;
     if (!deadline) {
       // Reset the derived countdown whenever the server clears its deadline.
       // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -51,11 +53,11 @@ export default function GamePage() {
     }
     const tick = () => setRemaining(Math.max(0, Math.ceil((new Date(deadline).getTime() - Date.now()) / 1000)));
     tick(); const timer = window.setInterval(tick, 250); return () => clearInterval(timer);
-  }, [game?.phase, game?.revealEndsAt, game?.turnStartsAt, game?.clipEndsAt]);
+  }, [game?.phase, game?.revealEndsAt, game?.bettingEndsAt, game?.turnStartsAt, game?.clipEndsAt]);
 
   useEffect(() => {
     if (!game || remaining !== 0) return;
-    if ((game.phase === "revealing" && game.revealEndsAt) || (game.phase === "countdown" && game.turnStartsAt)) void api("/api/game/advance", { method: "POST", body: JSON.stringify({ version: game.version }) }).then(refresh).catch(() => refresh());
+    if ((game.phase === "revealing" && game.revealEndsAt) || (game.phase === "betting" && game.bettingEndsAt) || (game.phase === "countdown" && game.turnStartsAt)) void api("/api/game/advance", { method: "POST", body: JSON.stringify({ version: game.version }) }).then(refresh).catch(() => refresh());
     if (game.phase === "playing" && game.clipEndsAt) void api("/api/game/pause", { method: "POST", body: JSON.stringify({ version: game.version }) }).catch(() => undefined);
   }, [game, remaining, refresh]);
 
@@ -88,6 +90,8 @@ export default function GamePage() {
   const activePlayer = game?.players.find((player) => player.id === game.currentPlayerId);
   const viewer = game?.players.find((player) => player.id === game.viewerPlayerId);
   const canPlace = game?.phase === "playing" && game.viewerPlayerId === game.currentPlayerId;
+  const viewerBet = game?.tokenBets.find((bet) => bet.playerId === game.viewerPlayerId);
+  const canBet = game?.phase === "betting" && Boolean(viewer) && game.viewerPlayerId !== game.currentPlayerId && (viewer?.tokens ?? 0) > 0 && !viewerBet;
 
   return <main>
     <header className="brand"><span className="record">♪</span><div><h1>Schlagerparty</h1><p>Sortier den Soundtrack deines Lebens.</p></div></header>
@@ -97,16 +101,20 @@ export default function GamePage() {
     {!game && !loading && <section className="hero panel"><div className="eyebrow">Keine Runde aktiv</div><h2>Gerade läuft keine Schlagerparty.</h2><Link className="button primary" href="/">Zur Startseite</Link></section>}
     {game && game.phase === "lobby" && !game.viewerPlayerId && <JoinForm onSubmit={join} busy={busy} />}
     {game && game.phase === "lobby" && game.viewerPlayerId && <Lobby game={game} busy={busy} onStart={() => run(() => api("/api/game/start", { method: "POST" }))} onTest={() => run(async () => { await api("/api/game/test-device", { method: "POST" }); setNotice("Spotify-Handy erfolgreich verbunden."); })} />}
-    {game && (game.phase === "countdown" || game.phase === "playing" || game.phase === "revealing") && <section className="game-shell">
-      <div className="turn-banner"><span>{game.phase === "revealing" ? "Auflösung" : "Jetzt am Zug"}</span><strong>{activePlayer?.name}</strong><em>{remaining > 0 ? `${remaining}s` : "…"}</em></div>
+    {game && (["countdown", "playing", "betting", "revealing", "reviewing"] as const).includes(game.phase as never) && <section className="game-shell">
+      <div className="turn-banner"><span>{game.phase === "betting" ? "Token-Tipps" : game.phase === "revealing" || game.phase === "reviewing" ? "Auflösung" : "Jetzt am Zug"}</span><strong>{activePlayer?.name}</strong><em>{game.phase === "reviewing" ? "✓" : remaining > 0 ? `${remaining}s` : "…"}</em></div>
       <ScoreStrip game={game} />
       {game.phase === "countdown" ? <div className="countdown panel"><span>Als Nächstes</span><h2>{activePlayer?.name}</h2><strong>{remaining || 1}</strong><p>Mach dich bereit – gleich startet der nächste Hit.</p></div> : <>
-        <div className={`mystery panel ${game.phase === "revealing" ? "revealed" : ""}`}>
-          {game.revealedTrack ? <TrackFace track={game.revealedTrack} correct={game.placementCorrect} /> : <><div className="vinyl"><span>?</span></div><h3>Welcher Hit läuft gerade?</h3><p>{remaining > 0 ? `Ausschnitt: noch ${remaining} Sekunden` : "Jetzt einsortieren"}</p></>}
+        <div className={`mystery panel ${game.revealedTrack ? "revealed" : ""}`}>
+          {game.revealedTrack ? <TrackFace track={game.revealedTrack} correct={game.placementCorrect} /> : <><div className="vinyl"><span>?</span></div><h3>Welcher Hit läuft gerade?</h3><p>{game.phase === "betting" ? `Noch ${remaining} Sekunden für Token-Tipps` : remaining > 0 ? `Ausschnitt: noch ${remaining} Sekunden` : "Jetzt einsortieren"}</p></>}
         </div>
-        <Timeline cards={activePlayer?.cards ?? []} interactive={Boolean(canPlace)} selectedGap={selectedGap} onSelect={setSelectedGap} revealed={game.phase === "revealing" ? game.revealedTrack : null} revealGap={game.selectedGap} correct={game.placementCorrect} />
+        <Timeline cards={activePlayer?.cards ?? []} interactive={Boolean(canPlace || canBet)} selectedGap={selectedGap} onSelect={setSelectedGap} revealed={game.revealedTrack} revealGap={game.selectedGap} correct={game.placementCorrect} tokenBets={game.tokenBets} betting={game.phase === "betting"} />
         {canPlace && <button className="primary sticky" disabled={selectedGap === null || busy} onClick={() => run(() => api("/api/game/place", { method: "POST", body: JSON.stringify({ gap: selectedGap, version: game.version }) }))}>Hier platzieren</button>}
+        {canBet && <button className="primary sticky" disabled={selectedGap === null || selectedGap === game.selectedGap || game.tokenBets.some((bet) => bet.gap === selectedGap) || busy} onClick={() => run(() => api("/api/game/token-bet", { method: "POST", body: JSON.stringify({ gap: selectedGap }) }))}>🪙 1 Token setzen</button>}
+        {game.phase === "betting" && !canBet && <p className="waiting">{viewerBet ? `Dein Token liegt auf Position ${viewerBet.gap + 1}.` : game.viewerPlayerId === game.currentPlayerId ? "Die anderen Spieler setzen ihre Token-Tipps …" : viewer ? "Kein Token-Tipp möglich." : "Die Spieler tippen …"}</p>}
         {!canPlace && game.phase === "playing" && <p className="waiting">{viewer ? `${activePlayer?.name} entscheidet …` : "Du schaust als Gast zu …"}</p>}
+        {(game.phase === "revealing" || game.phase === "reviewing") && game.tokenBets.length > 0 && <TokenResults game={game} />}
+        {game.phase === "reviewing" && <RealLifeCheck game={game} busy={busy} onAnswer={(correct) => run(() => api("/api/game/real-life-check", { method: "POST", body: JSON.stringify({ correct, version: game.version }) }))} />}
       </>}
     </section>}
     {game?.phase === "finished" && <Finished game={game} busy={busy} onClose={() => run(async () => { await api("/api/game/close", { method: "POST" }); router.replace("/"); })} />}
@@ -123,14 +131,22 @@ function Lobby({ game, busy, onStart, onTest }: { game: ViewGame; busy: boolean;
   </section>;
 }
 
-function ScoreStrip({ game }: { game: ViewGame }) { return <div className="score-strip">{game.players.map((player) => <div key={player.id} className={player.id === game.currentPlayerId ? "active" : ""}><strong>{player.name}</strong><span>{player.cards.length}/10</span></div>)}</div>; }
+function ScoreStrip({ game }: { game: ViewGame }) { return <div className="score-strip">{game.players.map((player) => <div key={player.id} className={player.id === game.currentPlayerId ? "active" : ""}><strong>{player.name}</strong><span>{player.cards.length}/10 · 🪙 {player.tokens}</span></div>)}</div>; }
 
 function TrackFace({ track, correct }: { track: NonNullable<PublicGame["revealedTrack"]>; correct: boolean | null }) { return <div className="track-face">{track.coverUrl && <Image src={track.coverUrl} alt="Albumcover" width={160} height={160} priority />}<div><span className={correct ? "result right" : "result wrong"}>{correct ? "Richtig!" : "Leider falsch"}</span><h3>{track.name}</h3><p>{track.artist}</p><strong>{track.year}</strong><a href={track.spotifyUrl} target="_blank" rel="noreferrer">Auf Spotify öffnen ↗</a></div></div>; }
 
-function Timeline({ cards, interactive, selectedGap, onSelect, revealed, revealGap, correct }: { cards: PublicGame["players"][number]["cards"]; interactive: boolean; selectedGap: number | null; onSelect: (gap: number) => void; revealed: PublicGame["revealedTrack"]; revealGap: number | null; correct: boolean | null }) {
+function Timeline({ cards, interactive, selectedGap, onSelect, revealed, revealGap, correct, tokenBets, betting }: { cards: PublicGame["players"][number]["cards"]; interactive: boolean; selectedGap: number | null; onSelect: (gap: number) => void; revealed: PublicGame["revealedTrack"]; revealGap: number | null; correct: boolean | null; tokenBets: PublicGame["tokenBets"]; betting: boolean }) {
   const nodes = useMemo(() => Array.from({ length: cards.length * 2 + 1 }), [cards.length]);
-  return <div className="timeline-wrap"><h3>Zeitstrahl</h3><div className="timeline">{nodes.map((_, index) => index % 2 === 0 ? <button key={`g${index}`} aria-label={`Lücke ${index / 2 + 1}`} className={`gap ${selectedGap === index / 2 ? "selected" : ""}`} disabled={!interactive} onClick={() => onSelect(index / 2)}><span>+</span>{revealed && revealGap === index / 2 && !correct && <b className="ghost-year">{revealed.year}</b>}</button> : <article className="card" key={cards[(index - 1) / 2].id}><small>{cards[(index - 1) / 2].year}</small><strong>{cards[(index - 1) / 2].name}</strong><span>{cards[(index - 1) / 2].artist}</span></article>)}</div></div>;
+  return <div className="timeline-wrap"><h3>{betting ? "Zeitstrahl des aktiven Spielers" : "Zeitstrahl"}</h3><div className="timeline">{nodes.map((_, index) => {
+    if (index % 2 !== 0) return <article className="card" key={cards[(index - 1) / 2].id}><small>{cards[(index - 1) / 2].year}</small><strong>{cards[(index - 1) / 2].name}</strong><span>{cards[(index - 1) / 2].artist}</span></article>;
+    const gap = index / 2; const bet = tokenBets.find((item) => item.gap === gap); const blocked = betting && (gap === revealGap || Boolean(bet));
+    return <button key={`g${index}`} aria-label={`Lücke ${gap + 1}`} className={`gap ${selectedGap === gap ? "selected" : ""} ${blocked ? "occupied" : ""}`} disabled={!interactive || blocked} onClick={() => onSelect(gap)}><span>{gap === revealGap && betting ? "★" : bet ? "🪙" : "+"}</span>{revealed && revealGap === gap && !correct && <b className="ghost-year">{revealed.year}</b>}</button>;
+  })}</div></div>;
 }
+
+function TokenResults({ game }: { game: ViewGame }) { return <section className="panel token-results"><h3>Token-Tipps</h3>{game.tokenBets.map((bet) => <p key={bet.playerId}><strong>{game.players.find((player) => player.id === bet.playerId)?.name}</strong> · Position {bet.gap + 1} <span className={`result ${bet.correct ? "right" : "wrong"}`}>{bet.correct ? "Song gewonnen" : "Daneben"}</span></p>)}</section>; }
+
+function RealLifeCheck({ game, busy, onAnswer }: { game: ViewGame; busy: boolean; onAnswer: (correct: boolean) => void }) { return <section className="panel real-life-check"><div className="eyebrow">Real-Life-Check</div><h3>Hat {game.players.find((player) => player.id === game.currentPlayerId)?.name} Interpret und Titel richtig erraten?</h3>{game.viewerIsHost ? <div className="actions"><button className="primary" disabled={busy} onClick={() => onAnswer(true)}>Ja · +1 Token</button><button className="secondary" disabled={busy} onClick={() => onAnswer(false)}>Nein</button></div> : <p className="waiting">Der Host entscheidet …</p>}</section>; }
 
 function Finished({ game, busy, onClose }: { game: ViewGame; busy: boolean; onClose: () => void }) {
   const winners = game.players.filter((player) => game.winnerIds.includes(player.id));

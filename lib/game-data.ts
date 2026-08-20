@@ -25,15 +25,18 @@ export async function currentIdentity(gameId: string) {
 
 export async function serializeGame(game: Record<string, unknown>): Promise<PublicGame & { viewerPlayerId: string | null; viewerIsHost: boolean }> {
   const db = adminDb();
-  const [{ data: players }, { data: cards }, { data: tracks }, identity] = await Promise.all([
-    db.from("players").select("id,name,seat,is_host").eq("game_id", game.id).order("seat"),
+  const [{ data: players }, { data: cards }, { data: tracks }, { data: tokenBets }, identity] = await Promise.all([
+    db.from("players").select("id,name,seat,is_host,tokens").eq("game_id", game.id).order("seat"),
     db.from("cards").select("player_id,track_id,position").eq("game_id", game.id).order("position"),
     db.from("tracks").select("*").eq("game_id", game.id),
+    game.current_track_id
+      ? db.from("token_bets").select("player_id,gap,correct").eq("track_id", game.current_track_id).order("gap")
+      : Promise.resolve({ data: [] }),
     currentIdentity(game.id as string),
   ]);
   const trackMap = new Map((tracks ?? []).map((track) => [track.id, track]));
   const publicPlayers = (players ?? []).map((player) => ({
-    id: player.id, name: player.name, seat: player.seat,
+    id: player.id, name: player.name, seat: player.seat, tokens: player.tokens,
     cards: (cards ?? []).filter((card) => card.player_id === player.id).map((card) => ({ ...toTrack(trackMap.get(card.track_id)!), position: card.position })),
   }));
   const current = game.current_track_id ? trackMap.get(game.current_track_id as string) : null;
@@ -43,11 +46,17 @@ export async function serializeGame(game: Record<string, unknown>): Promise<Publ
     clipSeconds: game.clip_seconds as number, revealSeconds: game.reveal_seconds as number,
     playlistName: game.playlist_name as string, hostPlayerId: (players ?? []).find((player) => player.is_host)?.id ?? "",
     currentPlayerId: currentPlayer?.id ?? null, revealEndsAt: game.reveal_ends_at as string | null,
+    bettingEndsAt: game.betting_ends_at as string | null,
     clipEndsAt: game.clip_ends_at as string | null,
     turnStartsAt: game.turn_starts_at as string | null,
     selectedGap: game.selected_gap as number | null,
-    revealedTrack: game.phase === "revealing" || game.phase === "finished" ? (current ? toTrack(current) : null) : null,
-    placementCorrect: game.phase === "revealing" || game.phase === "finished" ? game.placement_correct as boolean | null : null,
+    revealedTrack: ["revealing", "reviewing", "finished"].includes(game.phase as string) ? (current ? toTrack(current) : null) : null,
+    placementCorrect: ["revealing", "reviewing", "finished"].includes(game.phase as string) ? game.placement_correct as boolean | null : null,
+    realLifeCorrect: game.phase === "reviewing" || game.phase === "finished" ? game.real_life_correct as boolean | null : null,
+    tokenBets: (tokenBets ?? []).map((bet) => ({
+      playerId: bet.player_id, gap: bet.gap,
+      correct: ["revealing", "reviewing", "finished"].includes(game.phase as string) ? bet.correct : null,
+    })),
     players: publicPlayers, winnerIds: game.winner_ids as string[],
     poolRemaining: (tracks ?? []).filter((track) => track.state === "pool").length,
     viewerPlayerId: identity.player?.id ?? null, viewerIsHost: identity.isHost,
