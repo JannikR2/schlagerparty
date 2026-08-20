@@ -1,0 +1,138 @@
+"use client";
+
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import Image from "next/image";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import type { PublicGame } from "@/lib/types";
+import { browserDb } from "@/lib/supabase-browser";
+
+type ViewGame = PublicGame & { viewerPlayerId: string | null; viewerIsHost: boolean };
+
+async function api<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(path, { ...init, headers: { "Content-Type": "application/json", ...init?.headers } });
+  const body = await response.json();
+  if (!response.ok) throw new Error(body.error ?? "Etwas ist schiefgegangen.");
+  return body;
+}
+
+export default function GamePage() {
+  const router = useRouter();
+  const [game, setGame] = useState<ViewGame | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [selectedGap, setSelectedGap] = useState<number | null>(null);
+  const [remaining, setRemaining] = useState(0);
+
+  const refresh = useCallback(async () => {
+    const result = await api<{ game: ViewGame | null }>("/api/game");
+    setGame(result.game);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    // The setters run after network promises resolve; this is initial synchronization with the server.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    refresh().catch((reason) => { setError(reason.message); setLoading(false); });
+    const timer = window.setInterval(refresh, 5000);
+    const supabase = browserDb();
+    const channel = supabase?.channel("game-signals").on("postgres_changes", { event: "INSERT", schema: "public", table: "game_signals" }, refresh).subscribe();
+    return () => { clearInterval(timer); if (channel) void supabase?.removeChannel(channel); };
+  }, [refresh]);
+
+  useEffect(() => {
+    const deadline = game?.phase === "revealing" ? game.revealEndsAt : game?.phase === "countdown" ? game.turnStartsAt : game?.clipEndsAt;
+    if (!deadline) {
+      // Reset the derived countdown whenever the server clears its deadline.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setRemaining(0); return;
+    }
+    const tick = () => setRemaining(Math.max(0, Math.ceil((new Date(deadline).getTime() - Date.now()) / 1000)));
+    tick(); const timer = window.setInterval(tick, 250); return () => clearInterval(timer);
+  }, [game?.phase, game?.revealEndsAt, game?.turnStartsAt, game?.clipEndsAt]);
+
+  useEffect(() => {
+    if (!game || remaining !== 0) return;
+    if ((game.phase === "revealing" && game.revealEndsAt) || (game.phase === "countdown" && game.turnStartsAt)) void api("/api/game/advance", { method: "POST", body: JSON.stringify({ version: game.version }) }).then(refresh).catch(() => refresh());
+    if (game.phase === "playing" && game.clipEndsAt) void api("/api/game/pause", { method: "POST", body: JSON.stringify({ version: game.version }) }).catch(() => undefined);
+  }, [game, remaining, refresh]);
+
+  useEffect(() => {
+    // A new optimistic-lock version always represents a new placement decision.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSelectedGap(null);
+  }, [game?.version]);
+
+  const run = async (action: () => Promise<unknown>) => {
+    setBusy(true); setError(null); setNotice(null);
+    try { await action(); await refresh(); } catch (reason) { setError(reason instanceof Error ? reason.message : "Unbekannter Fehler"); }
+    finally { setBusy(false); }
+  };
+
+  const join = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault(); const data = new FormData(event.currentTarget);
+    void run(() => api("/api/game/join", { method: "POST", body: JSON.stringify(Object.fromEntries(data)) }));
+  };
+
+  const resetGame = () => {
+    if (!window.confirm("Aktive Runde wirklich zurücksetzen? Der aktuelle Spielstand geht verloren.")) return;
+    void run(async () => {
+      await api("/api/game/reset", { method: "POST" });
+      setGame(null);
+      router.replace("/");
+    });
+  };
+
+  const activePlayer = game?.players.find((player) => player.id === game.currentPlayerId);
+  const viewer = game?.players.find((player) => player.id === game.viewerPlayerId);
+  const canPlace = game?.phase === "playing" && game.viewerPlayerId === game.currentPlayerId;
+
+  return <main>
+    <header className="brand"><span className="record">♪</span><div><h1>Schlagerparty</h1><p>Sortier den Soundtrack deines Lebens.</p></div></header>
+    {game?.viewerIsHost && <button className="reset-button" onClick={resetGame} disabled={busy} title="Festgefahrene Runde beenden">↻ Runde zurücksetzen</button>}
+    {error && <div className="toast error">{error}<button onClick={() => setError(null)}>×</button></div>}
+    {notice && <div className="toast">{notice}</div>}
+    {!game && !loading && <section className="hero panel"><div className="eyebrow">Keine Runde aktiv</div><h2>Gerade läuft keine Schlagerparty.</h2><Link className="button primary" href="/">Zur Startseite</Link></section>}
+    {game && game.phase === "lobby" && !game.viewerPlayerId && <JoinForm onSubmit={join} busy={busy} />}
+    {game && game.phase === "lobby" && game.viewerPlayerId && <Lobby game={game} busy={busy} onStart={() => run(() => api("/api/game/start", { method: "POST" }))} onTest={() => run(async () => { await api("/api/game/test-device", { method: "POST" }); setNotice("Spotify-Handy erfolgreich verbunden."); })} />}
+    {game && (game.phase === "countdown" || game.phase === "playing" || game.phase === "revealing") && <section className="game-shell">
+      <div className="turn-banner"><span>{game.phase === "revealing" ? "Auflösung" : "Jetzt am Zug"}</span><strong>{activePlayer?.name}</strong><em>{remaining > 0 ? `${remaining}s` : "…"}</em></div>
+      <ScoreStrip game={game} />
+      {game.phase === "countdown" ? <div className="countdown panel"><span>Als Nächstes</span><h2>{activePlayer?.name}</h2><strong>{remaining || 1}</strong><p>Mach dich bereit – gleich startet der nächste Hit.</p></div> : <>
+        <div className={`mystery panel ${game.phase === "revealing" ? "revealed" : ""}`}>
+          {game.revealedTrack ? <TrackFace track={game.revealedTrack} correct={game.placementCorrect} /> : <><div className="vinyl"><span>?</span></div><h3>Welcher Hit läuft gerade?</h3><p>{remaining > 0 ? `Ausschnitt: noch ${remaining} Sekunden` : "Jetzt einsortieren"}</p></>}
+        </div>
+        <Timeline cards={activePlayer?.cards ?? []} interactive={Boolean(canPlace)} selectedGap={selectedGap} onSelect={setSelectedGap} revealed={game.phase === "revealing" ? game.revealedTrack : null} revealGap={game.selectedGap} correct={game.placementCorrect} />
+        {canPlace && <button className="primary sticky" disabled={selectedGap === null || busy} onClick={() => run(() => api("/api/game/place", { method: "POST", body: JSON.stringify({ gap: selectedGap, version: game.version }) }))}>Hier platzieren</button>}
+        {!canPlace && game.phase === "playing" && <p className="waiting">{viewer ? `${activePlayer?.name} entscheidet …` : "Du schaust als Gast zu …"}</p>}
+      </>}
+    </section>}
+    {game?.phase === "finished" && <Finished game={game} busy={busy} onClose={() => run(async () => { await api("/api/game/close", { method: "POST" }); router.replace("/"); })} />}
+  </main>;
+}
+
+function JoinForm({ onSubmit, busy }: { onSubmit: (e: FormEvent<HTMLFormElement>) => void; busy: boolean }) {
+  return <section className="panel form-panel"><div className="eyebrow">Runde gefunden</div><h2>Mach mit!</h2><form onSubmit={onSubmit}><label>Dein Name<input name="name" required maxLength={30} autoFocus placeholder="Wie sollen wir dich nennen?" /></label><button className="primary" disabled={busy}>Runde beitreten</button></form></section>;
+}
+
+function Lobby({ game, busy, onStart, onTest }: { game: ViewGame; busy: boolean; onStart: () => void; onTest: () => void }) {
+  return <section className="panel lobby"><div className="eyebrow">Lobby · {game.playlistName}</div><h2>Die Partycrew</h2><div className="players">{game.players.map((player) => <div className="player" key={player.id}><span>{player.seat + 1}</span><strong>{player.name}</strong>{player.id === game.hostPlayerId && <em>Host</em>}</div>)}</div>
+    {game.viewerIsHost ? <><p className="hint">Weitere Spieler öffnen einfach diese Startseite.</p><button className="text-button" onClick={onTest} disabled={busy}>Spotify-Gerät testen</button><button className="primary" onClick={onStart} disabled={busy || game.poolRemaining < game.players.length + 1}>Spiel starten</button></> : <div className="waiting">Der Host startet gleich …</div>}
+  </section>;
+}
+
+function ScoreStrip({ game }: { game: ViewGame }) { return <div className="score-strip">{game.players.map((player) => <div key={player.id} className={player.id === game.currentPlayerId ? "active" : ""}><strong>{player.name}</strong><span>{player.cards.length}/10</span></div>)}</div>; }
+
+function TrackFace({ track, correct }: { track: NonNullable<PublicGame["revealedTrack"]>; correct: boolean | null }) { return <div className="track-face">{track.coverUrl && <Image src={track.coverUrl} alt="Albumcover" width={160} height={160} priority />}<div><span className={correct ? "result right" : "result wrong"}>{correct ? "Richtig!" : "Leider falsch"}</span><h3>{track.name}</h3><p>{track.artist}</p><strong>{track.year}</strong><a href={track.spotifyUrl} target="_blank" rel="noreferrer">Auf Spotify öffnen ↗</a></div></div>; }
+
+function Timeline({ cards, interactive, selectedGap, onSelect, revealed, revealGap, correct }: { cards: PublicGame["players"][number]["cards"]; interactive: boolean; selectedGap: number | null; onSelect: (gap: number) => void; revealed: PublicGame["revealedTrack"]; revealGap: number | null; correct: boolean | null }) {
+  const nodes = useMemo(() => Array.from({ length: cards.length * 2 + 1 }), [cards.length]);
+  return <div className="timeline-wrap"><h3>Zeitstrahl</h3><div className="timeline">{nodes.map((_, index) => index % 2 === 0 ? <button key={`g${index}`} aria-label={`Lücke ${index / 2 + 1}`} className={`gap ${selectedGap === index / 2 ? "selected" : ""}`} disabled={!interactive} onClick={() => onSelect(index / 2)}><span>+</span>{revealed && revealGap === index / 2 && !correct && <b className="ghost-year">{revealed.year}</b>}</button> : <article className="card" key={cards[(index - 1) / 2].id}><small>{cards[(index - 1) / 2].year}</small><strong>{cards[(index - 1) / 2].name}</strong><span>{cards[(index - 1) / 2].artist}</span></article>)}</div></div>;
+}
+
+function Finished({ game, busy, onClose }: { game: ViewGame; busy: boolean; onClose: () => void }) {
+  const winners = game.players.filter((player) => game.winnerIds.includes(player.id));
+  return <section className="panel finished"><div className="confetti">✦ ♪ ✺</div><div className="eyebrow">Spiel beendet</div><h2>{winners.length > 1 ? "Wir haben mehrere Sieger!" : `${winners[0]?.name ?? "Die Party"} gewinnt!`}</h2><p>{winners.map((winner) => winner.name).join(" & ")} {winners.length > 1 ? "teilen sich den Sieg." : "hat die Musikgeschichte gemeistert."}</p><ScoreStrip game={game} />{game.viewerIsHost && <button className="primary" disabled={busy} onClick={onClose}>Runde schließen</button>}</section>;
+}
